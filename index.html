@@ -1,0 +1,211 @@
+<DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Generate Lirik - Karaoke Studio</title>
+  <script type="module" src="index.tsx"></script>
+  <link rel="stylesheet" href="index.css">
+<script type="importmap">
+{
+  "imports": {
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.21.0"
+  }
+}
+</script>
+</head>
+<body>
+  <main id="root">
+    <header>
+      <h1>Karaoke Studio 🎤</h1>
+      <p>Create professional karaoke videos from any audio or video file.</p>
+    </header>
+
+    <div id="uploader">
+      <label for="file-upload" class="file-upload-label">
+        <span id="file-upload-text">Drag & Drop an audio or video file or Click to Upload</span>
+        <input id="file-upload" type="file" accept="audio/*,video/*" />
+      </label>
+
+      <div class="separator">OR</div>
+
+      <div id="url-importer">
+        <div class="url-input-group">
+            <input type="url" id="url-input" placeholder="Paste media URL (YouTube, TikTok, direct link...)">
+            <button id="load-url-btn">Load</button>
+            <div class="help-tooltip-container">
+                <span class="help-icon">?</span>
+                <div class="tooltip">
+                    <b>Supported:</b> Direct links to audio/video files (.mp3, .mp4, etc.) and links from platforms like YouTube, TikTok, Facebook, etc.<br><br>
+                    <b>Not Supported:</b> Links from DRM-protected streaming services like Spotify or Apple Music.
+                </div>
+            </div>
+        </div>
+        <p id="url-error" class="hidden"></p>
+      </div>
+    </div>
+
+    <div id="result-section" class="hidden">
+      <div class="player-container">
+        <audio id="audio-player" controls></audio>
+        <audio id="background-music-player" class="hidden"></audio>
+        <video id="original-video-player" class="hidden" muted playsinline></video>
+        <video id="background-video-player" class="hidden" muted playsinline></video>
+      </div>
+      
+      <div id="vocal-remover-section" class="hidden">
+        <button id="remove-vocals-btn">1. Remove Vocals</button>
+        <button id="play-original-btn" class="hidden">Play Original</button>
+      </div>
+
+      <div id="audio-studio" class="hidden">
+        <h2>Karaoke Audio Studio</h2>
+        <div class="studio-controls">
+           <fieldset>
+            <legend>Audio Effects</legend>
+            <div class="control-group audio-control">
+                <label for="pitch-slider">Key (Pitch): <span id="pitch-value">0 semitones</span></label>
+                <input type="range" id="pitch-slider" min="-12" max="12" value="0" step="1">
+            </div>
+            <div class="control-group audio-control">
+              <label for="reverb-slider">Reverb: <span id="reverb-value">0%</span></label>
+              <input type="range" id="reverb-slider" min="0" max="100" value="0" step="1">
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>Background Music</legend>
+            <div class="control-group">
+              <label for="bg-music-input">Upload Track:</label>
+              <input type="file" id="bg-music-input" accept="audio/*">
+            </div>
+            <div class="control-group audio-control">
+              <label for="balance-slider">Balance: <span id="balance-value">100% Main / 0% BG</span></label>
+              <input type="range" id="balance-slider" min="0" max="100" value="0" step="1" disabled>
+            </div>
+          </fieldset>
+        </div>
+      </div>
+
+      <div id="transcription-settings" class="hidden">
+        <fieldset>
+            <legend>Transcription Settings</legend>
+            <div class="studio-controls">
+                <div class="control-group">
+                    <label for="language-select">Audio Language:</label>
+                    <select id="language-select">
+                        <option value="auto">Auto-Detect</option>
+                        <option value="en">English</option>
+                        <option value="es">Spanish</option>
+                        <option value="id">Indonesian</option>
+                        <option value="ja">Japanese</option>
+                        <option value="fr">French</option>
+                        <option value="de">German</option>
+                        <option value="ko">Korean</option>
+                        <option value="pt">Portuguese</option>
+                        <option value="ru">Russian</option>
+                        <option value="zh">Chinese</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label for="speaker-id-checkbox">Identify Speakers:</label>
+                    <input type="checkbox" id="speaker-id-checkbox">
+                </div>
+            </div>
+            <button id="retranscribe-btn">Update Transcription</button>
+        </fieldset>
+      </div>
+
+      <div id="loader" class="hidden">
+        <div class="spinner"></div>
+        <p>Transcribing your audio masterpiece...</p>
+      </div>
+  
+      <div id="lyrics-container">
+        <!-- Synchronized lyrics will be injected here -->
+      </div>
+
+      <div id="download-section" class="hidden">
+        <h3>Download Lyrics</h3>
+        <div class="button-group">
+          <button id="download-txt-btn">Download .txt</button>
+          <button id="download-lrc-btn">Download .lrc</button>
+          <button id="download-srt-btn">Download .srt</button>
+        </div>
+      </div>
+
+      <div id="karaoke-studio" class="hidden">
+        <h2>Karaoke Video Studio</h2>
+        <div class="studio-controls">
+          <fieldset>
+            <legend>Background Options</legend>
+            <div class="control-group">
+              <label><input type="radio" name="bg-type" value="color" checked> Color</label>
+              <input type="color" id="bg-color-input" value="#000055">
+            </div>
+            <div class="control-group">
+              <label><input type="radio" name="bg-type" value="image"> Image</label>
+              <input type="file" id="bg-image-input" accept="image/*">
+            </div>
+             <div class="control-group">
+              <label><input type="radio" name="bg-type" value="bg-video"> Video</label>
+              <input type="file" id="bg-video-input" accept="video/*">
+            </div>
+            <div class="control-group" id="original-video-bg-option" style="display: none;">
+              <label><input type="radio" name="bg-type" value="video"> Use Original Video</label>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>Lyric Styling</legend>
+            <div class="control-group">
+                <label for="font-select">Font:</label>
+                <select id="font-select">
+                    <option value="Arial">Arial</option>
+                    <option value="Verdana">Verdana</option>
+                    <option value="Tahoma">Tahoma</option>
+                    <option value="Impact">Impact</option>
+                    <option value="Comic Sans MS">Comic Sans MS</option>
+                </select>
+            </div>
+            <div class="control-group">
+              <label for="unsung-color-input">Un-sung Text:</label>
+              <input type="color" id="unsung-color-input" value="#FFFFFF">
+            </div>
+            <div class="control-group">
+              <label for="sung-color-input">Sung Text:</label>
+              <input type="color" id="sung-color-input" value="#FFFF00">
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>Export Settings</legend>
+             <div class="control-group">
+                <label for="resolution-select">Resolution:</label>
+                <select id="resolution-select">
+                    <option value="1280x720">720p (HD)</option>
+                    <option value="1920x1080">1080p (Full HD)</option>
+                    <option value="640x360">360p (Low)</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label for="fps-select">Frame Rate:</label>
+                <select id="fps-select">
+                    <option value="30">30 FPS</option>
+                    <option value="24">24 FPS (Cinematic)</option>
+                </select>
+            </div>
+          </fieldset>
+        </div>
+        <button id="create-karaoke-btn">Create Karaoke Video</button>
+        <div id="rendering-progress" class="hidden">
+            <p id="rendering-status">Initializing renderer...</p>
+            <progress id="rendering-progress-bar" value="0" max="100"></progress>
+        </div>
+         <div id="video-download-section" class="hidden">
+            <a id="download-video-link" download="karaoke.webm">Download Video</a>
+        </div>
+      </div>
+
+    </div>
+    <canvas id="karaoke-canvas" width="1280" height="720" class="hidden"></canvas>
+  </main>
+</body>
+</html>

@@ -1,0 +1,5 @@
+{
+  "name": "Generator Karaoke",
+  "description": "An AI-powered app to automatically transcribe audio into synchronized lyrics and export them in TXT, LRC, and SRT formats.",
+  "requestFramePermissions": []
+}
