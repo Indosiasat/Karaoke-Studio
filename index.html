@@ -53,8 +53,25 @@
         <video id="background-video-player" class="hidden" muted playsinline></video>
       </div>
       
+      <div id="audio-enhancement-section" class="hidden">
+        <fieldset>
+            <legend>Audio Enhancement (for Transcription)</legend>
+            <div class="enhancement-controls">
+                <div class="control-group">
+                    <label for="normalize-checkbox">Normalize Volume</label>
+                    <input type="checkbox" id="normalize-checkbox" checked>
+                </div>
+                <div class="control-group">
+                    <label for="noise-reduction-checkbox">Reduce Noise</label>
+                    <input type="checkbox" id="noise-reduction-checkbox">
+                </div>
+            </div>
+            <button id="transcribe-btn">Transcribe Audio</button>
+        </fieldset>
+      </div>
+
       <div id="vocal-remover-section" class="hidden">
-        <button id="remove-vocals-btn">1. Remove Vocals</button>
+        <button id="remove-vocals-btn">Remove Vocals</button>
         <button id="play-original-btn" class="hidden">Play Original</button>
       </div>
 

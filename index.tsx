@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 
 // --- UIElement References ---
@@ -22,6 +21,11 @@ const downloadSrtBtn = document.getElementById('download-srt-btn') as HTMLButton
 const vocalRemoverSection = document.getElementById('vocal-remover-section') as HTMLDivElement;
 const removeVocalsBtn = document.getElementById('remove-vocals-btn') as HTMLButtonElement;
 const playOriginalBtn = document.getElementById('play-original-btn') as HTMLButtonElement;
+// Audio Enhancement UI
+const audioEnhancementSection = document.getElementById('audio-enhancement-section') as HTMLDivElement;
+const normalizeCheckbox = document.getElementById('normalize-checkbox') as HTMLInputElement;
+const noiseReductionCheckbox = document.getElementById('noise-reduction-checkbox') as HTMLInputElement;
+const transcribeBtn = document.getElementById('transcribe-btn') as HTMLButtonElement;
 // Transcription Settings UI
 const transcriptionSettings = document.getElementById('transcription-settings') as HTMLDivElement;
 const languageSelect = document.getElementById('language-select') as HTMLSelectElement;
@@ -66,6 +70,7 @@ let backgroundMusicBuffer: AudioBuffer | null = null;
 let isInstrumental = false;
 let backgroundImage: HTMLImageElement | null = null;
 let backgroundVideo: File | null = null;
+let activeLyricElement: HTMLParagraphElement | null = null;
 // Web Audio API nodes for real-time playback
 let audioContext: AudioContext | null = null;
 let instrumentalAudioSourceNode: AudioBufferSourceNode | null = null;
@@ -102,16 +107,13 @@ function init() {
   downloadLrcBtn.addEventListener('click', () => downloadFile(generateLrc(), 'lyrics.lrc', 'application/octet-stream'));
   downloadSrtBtn.addEventListener('click', () => downloadFile(generateSrt(), 'lyrics.srt', 'application/octet-stream'));
 
-  // Vocal remover
+  // Main Action Buttons
+  transcribeBtn.addEventListener('click', handleTranscriptionRequest);
   removeVocalsBtn.addEventListener('click', removeVocals);
   playOriginalBtn.addEventListener('click', togglePlayback);
 
   // Transcription Settings
-  retranscribeBtn.addEventListener('click', () => {
-      if (originalAudioBuffer) {
-        transcribeAudio(originalAudioBuffer, languageSelect.value, speakerIdCheckbox.checked);
-      }
-  });
+  retranscribeBtn.addEventListener('click', handleTranscriptionRequest);
 
   // Audio Studio
   pitchSlider.addEventListener('input', handlePitchChange);
@@ -193,7 +195,7 @@ async function handleUrlLoad() {
 
 
 /**
- * Processes the uploaded file, decodes audio, and starts transcription.
+ * Processes the uploaded file, decodes audio, and shows enhancement options.
  */
 async function processFile(file: File) {
   resetUI();
@@ -207,8 +209,10 @@ async function processFile(file: File) {
 
   if (file.type.startsWith('video/')) {
       originalVideoPlayer.src = fileURL;
+      originalVideoPlayer.classList.remove('hidden');
       originalVideoBgOption.style.display = 'flex';
   } else {
+      originalVideoPlayer.classList.add('hidden');
       originalVideoBgOption.style.display = 'none';
   }
 
@@ -217,11 +221,30 @@ async function processFile(file: File) {
     const tempAudioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
     originalAudioBuffer = await tempAudioCtx.decodeAudioData(arrayBuffer);
     await tempAudioCtx.close();
-    vocalRemoverSection.classList.remove('hidden');
-    transcribeAudio(originalAudioBuffer, 'auto', false);
+    audioEnhancementSection.classList.remove('hidden');
   } catch (error) {
     showError('Error decoding audio', `Could not process the audio from the provided file. It might be corrupted or in an unsupported format.`, error);
   }
+}
+
+/**
+ * Starts the transcription process based on UI settings.
+ */
+async function handleTranscriptionRequest() {
+    if (!originalAudioBuffer) {
+        showError('No Audio', 'Cannot start transcription without a loaded audio file.');
+        return;
+    }
+
+    const useNormalization = normalizeCheckbox.checked;
+    const useNoiseReduction = noiseReductionCheckbox.checked;
+
+    try {
+        const enhancedBuffer = await processAudioEnhancements(originalAudioBuffer, useNormalization, useNoiseReduction);
+        await transcribeAudio(enhancedBuffer, languageSelect.value, speakerIdCheckbox.checked);
+    } catch (error) {
+        showError('Audio Processing Failed', 'Could not apply enhancements to the audio.', error);
+    }
 }
 
 /**
@@ -234,7 +257,9 @@ async function transcribeAudio(buffer: AudioBuffer, language: string, identifySp
   lyricsContainer.classList.add('hidden');
   downloadSection.classList.add('hidden');
   transcriptionSettings.classList.add('hidden');
+  audioEnhancementSection.classList.add('hidden');
   retranscribeBtn.disabled = true;
+  transcribeBtn.disabled = true;
 
   try {
     const audioBlob = bufferToWave(buffer);
@@ -270,6 +295,8 @@ async function transcribeAudio(buffer: AudioBuffer, language: string, identifySp
     lyricsContainer.classList.remove('hidden');
     downloadSection.classList.remove('hidden');
     transcriptionSettings.classList.remove('hidden');
+    vocalRemoverSection.classList.remove('hidden');
+
 
   } catch (error: any) {
       if (error.message && error.message.includes('RESOURCE_EXHAUSTED')) {
@@ -286,8 +313,62 @@ async function transcribeAudio(buffer: AudioBuffer, language: string, identifySp
       lyricsContainer.classList.remove('hidden');
   } finally {
       retranscribeBtn.disabled = false;
+      transcribeBtn.disabled = false;
   }
 }
+
+
+/**
+ * Applies selected enhancements to an AudioBuffer.
+ */
+async function processAudioEnhancements(
+    inputBuffer: AudioBuffer,
+    normalize: boolean,
+    reduceNoise: boolean
+): Promise<AudioBuffer> {
+    if (!normalize && !reduceNoise) {
+        return inputBuffer; // No processing needed
+    }
+
+    const tempCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const { numberOfChannels, length, sampleRate } = inputBuffer;
+    const processedBuffer = tempCtx.createBuffer(numberOfChannels, length, sampleRate);
+
+    for (let channel = 0; channel < numberOfChannels; channel++) {
+        const inputData = inputBuffer.getChannelData(channel);
+        const processedData = inputData.slice(0); // Create a copy
+
+        // 1. Normalization
+        if (normalize) {
+            let maxAmp = 0;
+            for (let i = 0; i < length; i++) {
+                maxAmp = Math.max(maxAmp, Math.abs(processedData[i]));
+            }
+            if (maxAmp > 0) {
+                const gain = 1.0 / maxAmp;
+                for (let i = 0; i < length; i++) {
+                    processedData[i] *= gain;
+                }
+            }
+        }
+
+        // 2. Simple Noise Gate
+        if (reduceNoise) {
+            const threshold = 0.04; // Adjust this value based on testing
+            for (let i = 0; i < length; i++) {
+                if (Math.abs(processedData[i]) < threshold) {
+                    processedData[i] = 0;
+                }
+            }
+        }
+        
+        processedBuffer.copyToChannel(processedData, channel);
+    }
+    
+    await tempCtx.close();
+    return processedBuffer;
+}
+
 
 /**
  * Parses the raw text response from the API into a structured lyrics array.
@@ -336,22 +417,40 @@ function displayLyrics() {
 }
 
 /**
- * Highlights the current lyric line based on audio player time.
+ * Highlights the current lyric line based on audio player time and scrolls it into view.
  */
 function syncLyrics() {
   const currentTime = audioPlayer.currentTime;
-  const activeLineIndex = lyrics.findIndex(line => currentTime >= line.startTime && currentTime <= line.endTime);
   
-  document.querySelectorAll('#lyrics-container p').forEach((p, index) => {
-    if (index === activeLineIndex) {
-      if (!p.classList.contains('active')) {
-        p.classList.add('active');
-        p.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    } else {
-      p.classList.remove('active');
+  // Use < instead of <= for endTime to prevent a line staying active for one extra frame
+  const activeLineIndex = lyrics.findIndex(line => currentTime >= line.startTime && currentTime < line.endTime);
+  
+  const allLyricElements = document.querySelectorAll<HTMLParagraphElement>('#lyrics-container p');
+
+  if (activeLineIndex === -1) {
+    if (activeLyricElement) {
+      activeLyricElement.classList.remove('active');
+      activeLyricElement = null;
     }
-  });
+    return;
+  }
+  
+  const newActiveElement = allLyricElements[activeLineIndex];
+
+  // If the active line has changed, update classes and scroll
+  if (newActiveElement && newActiveElement !== activeLyricElement) {
+    // Remove active class from the previous line
+    if (activeLyricElement) {
+      activeLyricElement.classList.remove('active');
+    }
+    
+    // Add active class to the new line and scroll it into view
+    newActiveElement.classList.add('active');
+    newActiveElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    
+    // Update the reference to the currently active element
+    activeLyricElement = newActiveElement;
+  }
 }
 
 /**
@@ -374,12 +473,6 @@ async function removeVocals() {
         source.buffer = originalAudioBuffer;
 
         if (originalAudioBuffer.numberOfChannels >= 2) {
-            // FIX: Corrected vocal removal logic.
-            // The original code was attempting manual buffer manipulation but had several errors:
-            // 1. It tried to get channel data from a ChannelSplitterNode instead of the AudioBuffer.
-            // 2. It had unused AudioNode declarations.
-            // 3. It incorrectly called start() on the original source for the stereo case.
-            // This corrected code performs manual phase inversion on the buffer data directly.
             const leftChannel = originalAudioBuffer.getChannelData(0);
             const rightChannel = originalAudioBuffer.getChannelData(1);
 
@@ -410,7 +503,7 @@ async function removeVocals() {
     } catch (error) {
         showError('Vocal Removal Failed', 'An error occurred while processing the audio.', error);
     } finally {
-        removeVocalsBtn.textContent = '1. Remove Vocals';
+        removeVocalsBtn.textContent = 'Remove Vocals';
         removeVocalsBtn.disabled = false;
     }
 }
@@ -780,6 +873,7 @@ function resetUI() {
     lyrics = [];
     lyricsContainer.innerHTML = '';
     downloadSection.classList.add('hidden');
+    audioEnhancementSection.classList.add('hidden');
     vocalRemoverSection.classList.add('hidden');
     audioStudio.classList.add('hidden');
     karaokeStudio.classList.add('hidden');
@@ -793,6 +887,7 @@ function resetUI() {
     backgroundMusicBuffer = null;
     backgroundImage = null;
     backgroundVideo = null;
+    activeLyricElement = null;
     stopAudioContext();
     if (audioContext) {
         audioContext.close();
